@@ -1,5 +1,5 @@
 """
-Procesador de contactos DENUE — Interfaz Gráfica (Multifunción y Unificador)
+Procesador de contactos DENUE — Interfaz Gráfica (Multifunción y Acumulativo)
 """
 import pandas as pd
 import re
@@ -47,6 +47,7 @@ def procesar_separar_municipios(rutas_entrada, carpeta_salida, log):
                 
             df_temp.columns = df_temp.columns.str.strip().str.lower()
             
+            # Verificación de las 4 columnas exactas pedidas para Opción 1
             columnas_requeridas = ['correoelec', 'nom_estab', 'entidad', 'municipio']
             faltantes = [col for col in columnas_requeridas if col not in df_temp.columns]
             if faltantes:
@@ -86,6 +87,7 @@ def procesar_separar_municipios(rutas_entrada, carpeta_salida, log):
     for mun in sorted(municipios):
         df_m = df[df['municipio'].fillna("SIN_MUNICIPIO").str.strip() == mun].copy()
         
+        # Guardar estrictamente estas 4 columnas en este orden
         df_m = df_m[['correoelec', 'nom_estab', 'entidad', 'municipio']]
         df_m = df_m.sort_values('correoelec')
         
@@ -129,6 +131,13 @@ def procesar_match_correos(rutas_base, archivos_match, archivo_salida, log):
                 
             df_temp.columns = df_temp.columns.str.strip().str.lower()
             
+            # Dinamismo para la columna geográfica si no se llama 'municipio'
+            if 'municipio' not in df_temp.columns:
+                if 'entidad' in df_temp.columns:
+                    df_temp = df_temp.rename(columns={'entidad': 'municipio'})
+                elif 'estado' in df_temp.columns:
+                    df_temp = df_temp.rename(columns={'estado': 'municipio'})
+
             columnas_match = ['correoelec', 'nom_estab', 'municipio']
             faltantes = [c for c in columnas_match if c not in df_temp.columns]
             if faltantes:
@@ -240,6 +249,7 @@ class App(tk.Tk):
         self.title("Procesador de Contactos DENUE - Avanzado")
         self.resizable(False, False)
         self.configure(bg="#1e1e2e")
+        # Listas para acumular archivos seleccionados de distintas carpetas
         self.archivos_in1 = []       
         self.archivos_base = []      
         self.archivos_externos = []  
@@ -252,6 +262,7 @@ class App(tk.Tk):
         FG  = "#cdd6f4"
         ACC = "#89b4fa"
         BTN = "#313244"
+        RED = "#f38ba8"
         FONT_H = ("Segoe UI", 11, "bold")
         FONT_N = ("Segoe UI", 10)
 
@@ -275,45 +286,49 @@ class App(tk.Tk):
 
         # ----- UI OPCIÓN 1 -----
         f1_in = tk.Frame(self.frm_opcion1, bg=BG); f1_in.pack(fill="x", pady=4)
-        tk.Label(f1_in, text="Archivo(s) Entrada:", bg=BG, fg=FG, font=FONT_N, width=22, anchor="w").pack(side="left")
+        tk.Label(f1_in, text="Archivo(s) Entrada:", bg=BG, fg=FG, font=FONT_N, width=20, anchor="w").pack(side="left")
         self.var_in1 = tk.StringVar(value="0 archivos agregados")
-        tk.Entry(f1_in, textvariable=self.var_in1, width=38, bg=BTN, fg=FG, state="readonly", relief="flat", font=FONT_N).pack(side="left", padx=4)
+        tk.Entry(f1_in, textvariable=self.var_in1, width=28, bg=BTN, fg=FG, state="readonly", relief="flat", font=FONT_N).pack(side="left", padx=4)
         tk.Button(f1_in, text="➕ Agregar", command=self._buscar_in1, bg=ACC, fg="#1e1e2e", font=FONT_H, relief="flat", cursor="hand2", padx=4).pack(side="left")
+        tk.Button(f1_in, text="🗑 Limpiar", command=self._limpiar_in1, bg=RED, fg="#1e1e2e", font=FONT_H, relief="flat", cursor="hand2", padx=4).pack(side="left", padx=4)
 
         f1_out = tk.Frame(self.frm_opcion1, bg=BG); f1_out.pack(fill="x", pady=4)
-        tk.Label(f1_out, text="Carpeta de Salida:", bg=BG, fg=FG, font=FONT_N, width=22, anchor="w").pack(side="left")
+        tk.Label(f1_out, text="Carpeta de Salida:", bg=BG, fg=FG, font=FONT_N, width=20, anchor="w").pack(side="left")
         self.var_out1 = tk.StringVar()
         tk.Entry(f1_out, textvariable=self.var_out1, width=38, bg=BTN, fg=FG, insertbackground=FG, relief="flat", font=FONT_N).pack(side="left", padx=4)
         tk.Button(f1_out, text="📁 Destino", command=self._buscar_out1, bg=ACC, fg="#1e1e2e", font=FONT_H, relief="flat", cursor="hand2", padx=4).pack(side="left")
 
         # ----- UI OPCIÓN 2 -----
         f2_base = tk.Frame(self.frm_opcion2, bg=BG); f2_base.pack(fill="x", pady=4)
-        tk.Label(f2_base, text="Archivo(s) Base:", bg=BG, fg=FG, font=FONT_N, width=22, anchor="w").pack(side="left")
+        tk.Label(f2_base, text="Archivo(s) Base:", bg=BG, fg=FG, font=FONT_N, width=20, anchor="w").pack(side="left")
         self.var_base2 = tk.StringVar(value="0 bases agregadas")
-        tk.Entry(f2_base, textvariable=self.var_base2, width=38, bg=BTN, fg=FG, state="readonly", relief="flat", font=FONT_N).pack(side="left", padx=4)
+        tk.Entry(f2_base, textvariable=self.var_base2, width=28, bg=BTN, fg=FG, state="readonly", relief="flat", font=FONT_N).pack(side="left", padx=4)
         tk.Button(f2_base, text="➕ Agregar", command=self._buscar_base2, bg=ACC, fg="#1e1e2e", font=FONT_H, relief="flat", cursor="hand2", padx=4).pack(side="left")
+        tk.Button(f2_base, text="🗑 Limpiar", command=self._limpiar_base2, bg=RED, fg="#1e1e2e", font=FONT_H, relief="flat", cursor="hand2", padx=4).pack(side="left", padx=4)
 
         f2_match = tk.Frame(self.frm_opcion2, bg=BG); f2_match.pack(fill="x", pady=4)
-        tk.Label(f2_match, text="Archivos Match:", bg=BG, fg=FG, font=FONT_N, width=22, anchor="w").pack(side="left")
-        self.var_match2 = tk.StringVar(value="0 archivos match agregados")
-        tk.Entry(f2_match, textvariable=self.var_match2, width=38, bg=BTN, fg=FG, state="readonly", relief="flat", font=FONT_N).pack(side="left", padx=4)
+        tk.Label(f2_match, text="Archivos Match:", bg=BG, fg=FG, font=FONT_N, width=20, anchor="w").pack(side="left")
+        self.var_match2 = tk.StringVar(value="0 archivos match")
+        tk.Entry(f2_match, textvariable=self.var_match2, width=28, bg=BTN, fg=FG, state="readonly", relief="flat", font=FONT_N).pack(side="left", padx=4)
         tk.Button(f2_match, text="➕ Agregar", command=self._buscar_match2, bg=ACC, fg="#1e1e2e", font=FONT_H, relief="flat", cursor="hand2", padx=4).pack(side="left")
+        tk.Button(f2_match, text="🗑 Limpiar", command=self._limpiar_match2, bg=RED, fg="#1e1e2e", font=FONT_H, relief="flat", cursor="hand2", padx=4).pack(side="left", padx=4)
 
         f2_out = tk.Frame(self.frm_opcion2, bg=BG); f2_out.pack(fill="x", pady=4)
-        tk.Label(f2_out, text="CSV Final de Salida:", bg=BG, fg=FG, font=FONT_N, width=22, anchor="w").pack(side="left")
+        tk.Label(f2_out, text="CSV Final Salida:", bg=BG, fg=FG, font=FONT_N, width=20, anchor="w").pack(side="left")
         self.var_out2 = tk.StringVar()
         tk.Entry(f2_out, textvariable=self.var_out2, width=38, bg=BTN, fg=FG, insertbackground=FG, relief="flat", font=FONT_N).pack(side="left", padx=4)
         tk.Button(f2_out, text="💾 Guardar", command=self._buscar_out2, bg=ACC, fg="#1e1e2e", font=FONT_H, relief="flat", cursor="hand2", padx=4).pack(side="left")
 
         # ----- UI OPCIÓN 3 -----
         f3_in = tk.Frame(self.frm_opcion3, bg=BG); f3_in.pack(fill="x", pady=4)
-        tk.Label(f3_in, text="Archivos a Unir:", bg=BG, fg=FG, font=FONT_N, width=22, anchor="w").pack(side="left")
+        tk.Label(f3_in, text="Archivos a Unir:", bg=BG, fg=FG, font=FONT_N, width=20, anchor="w").pack(side="left")
         self.var_in3 = tk.StringVar(value="0 archivos agregados")
-        tk.Entry(f3_in, textvariable=self.var_in3, width=38, bg=BTN, fg=FG, state="readonly", relief="flat", font=FONT_N).pack(side="left", padx=4)
+        tk.Entry(f3_in, textvariable=self.var_in3, width=28, bg=BTN, fg=FG, state="readonly", relief="flat", font=FONT_N).pack(side="left", padx=4)
         tk.Button(f3_in, text="➕ Agregar", command=self._buscar_in3, bg=ACC, fg="#1e1e2e", font=FONT_H, relief="flat", cursor="hand2", padx=4).pack(side="left")
+        tk.Button(f3_in, text="🗑 Limpiar", command=self._limpiar_in3, bg=RED, fg="#1e1e2e", font=FONT_H, relief="flat", cursor="hand2", padx=4).pack(side="left", padx=4)
 
         f3_out = tk.Frame(self.frm_opcion3, bg=BG); f3_out.pack(fill="x", pady=4)
-        tk.Label(f3_out, text="CSV Unido Salida:", bg=BG, fg=FG, font=FONT_N, width=22, anchor="w").pack(side="left")
+        tk.Label(f3_out, text="CSV Unido Salida:", bg=BG, fg=FG, font=FONT_N, width=20, anchor="w").pack(side="left")
         self.var_out3 = tk.StringVar()
         tk.Entry(f3_out, textvariable=self.var_out3, width=38, bg=BTN, fg=FG, insertbackground=FG, relief="flat", font=FONT_N).pack(side="left", padx=4)
         tk.Button(f3_out, text="💾 Guardar", command=self._buscar_out3, bg=ACC, fg="#1e1e2e", font=FONT_H, relief="flat", cursor="hand2", padx=4).pack(side="left")
@@ -357,51 +372,81 @@ class App(tk.Tk):
         self.txt.see("end")
         self.txt.configure(state="disabled")
 
-    # Búsquedas Modo 1
+    # ── MÉTODOS MODO 1 ──
     def _buscar_in1(self):
         paths = filedialog.askopenfilenames(title="Selecciona archivo(s) Entrada (Excel/CSV)", filetypes=[("Archivos de Datos", "*.xlsx *.xls *.xlsm *.xlsb *.csv")])
         if paths:
-            self.archivos_in1 = list(paths)
-            self.var_in1.set(f"{len(paths)} archivo(s) listos")
-            self.var_out1.set(os.path.join(os.path.dirname(paths[0]), "CSVs_Por_Municipio"))
+            for p in paths:
+                if p not in self.archivos_in1:
+                    self.archivos_in1.append(p)
+            self.var_in1.set(f"{len(self.archivos_in1)} archivo(s) agregados")
+            if not self.var_out1.get() and self.archivos_in1:
+                self.var_out1.set(os.path.join(os.path.dirname(self.archivos_in1[0]), "CSVs_Por_Municipio"))
+
+    def _limpiar_in1(self):
+        self.archivos_in1 = []
+        self.var_in1.set("0 archivos agregados")
+        self.var_out1.set("")
 
     def _buscar_out1(self):
         path = filedialog.askdirectory(title="Carpeta destino para los CSVs")
         if path:
             self.var_out1.set(path)
 
-    # Búsquedas Modo 2
+    # ── MÉTODOS MODO 2 ──
     def _buscar_base2(self):
         paths = filedialog.askopenfilenames(title="Selecciona Archivo(s) Base (Excel/CSV)", filetypes=[("Archivos de Datos", "*.xlsx *.xls *.xlsm *.xlsb *.csv")])
         if paths:
-            self.archivos_base = list(paths)
-            self.var_base2.set(f"{len(paths)} archivo(s) base listo(s)")
-            self.var_out2.set(os.path.join(os.path.dirname(paths[0]), "MATCH_FINAL_UNIFICADO.csv"))
+            for p in paths:
+                if p not in self.archivos_base:
+                    self.archivos_base.append(p)
+            self.var_base2.set(f"{len(self.archivos_base)} base(s) agregada(s)")
+            if not self.var_out2.get() and self.archivos_base:
+                self.var_out2.set(os.path.join(os.path.dirname(self.archivos_base[0]), "MATCH_FINAL_UNIFICADO.csv"))
+
+    def _limpiar_base2(self):
+        self.archivos_base = []
+        self.var_base2.set("0 bases agregadas")
 
     def _buscar_match2(self):
         paths = filedialog.askopenfilenames(title="Archivos Match para buscar correos (Excel/CSV)", filetypes=[("Excel/CSV", "*.xlsx *.xls *.csv")])
         if paths:
-            self.archivos_externos = list(paths)
-            self.var_match2.set(f"{len(paths)} archivo(s) match listo(s)")
+            for p in paths:
+                if p not in self.archivos_externos:
+                    self.archivos_externos.append(p)
+            self.var_match2.set(f"{len(self.archivos_externos)} archivo(s) match")
+
+    def _limpiar_match2(self):
+        self.archivos_externos = []
+        self.var_match2.set("0 archivos match")
 
     def _buscar_out2(self):
         path = filedialog.asksaveasfilename(title="Guardar CSV resultante", defaultextension=".csv", filetypes=[("Archivo CSV", "*.csv")])
         if path:
             self.var_out2.set(path)
 
-    # Búsquedas Modo 3
+    # ── MÉTODOS MODO 3 ──
     def _buscar_in3(self):
         paths = filedialog.askopenfilenames(title="Selecciona archivos a Unir (Excel/CSV)", filetypes=[("Archivos de Datos", "*.xlsx *.xls *.xlsm *.xlsb *.csv")])
         if paths:
-            self.archivos_in3 = list(paths)
-            self.var_in3.set(f"{len(paths)} archivo(s) listos")
-            self.var_out3.set(os.path.join(os.path.dirname(paths[0]), "ARCHIVO_UNIDO.csv"))
+            for p in paths:
+                if p not in self.archivos_in3:
+                    self.archivos_in3.append(p)
+            self.var_in3.set(f"{len(self.archivos_in3)} archivo(s) agregados")
+            if not self.var_out3.get() and self.archivos_in3:
+                self.var_out3.set(os.path.join(os.path.dirname(self.archivos_in3[0]), "ARCHIVO_UNIDO.csv"))
             
+    def _limpiar_in3(self):
+        self.archivos_in3 = []
+        self.var_in3.set("0 archivos agregados")
+        self.var_out3.set("")
+
     def _buscar_out3(self):
         path = filedialog.asksaveasfilename(title="Guardar CSV resultante", defaultextension=".csv", filetypes=[("Archivo CSV", "*.csv")])
         if path:
             self.var_out3.set(path)
 
+    # ── EJECUCIÓN ──
     def _iniciar(self):
         modo = self.modo_var.get()
         
