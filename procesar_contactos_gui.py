@@ -4,6 +4,8 @@ Procesador de contactos DENUE — Interfaz Gráfica (Multifunción y Acumulativo
 import pandas as pd
 import re
 import os
+import unicodedata
+import difflib
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -25,6 +27,219 @@ def es_correo_gobierno(c):
 
 def sanitizar(nombre):
     return re.sub(r'[\\/*?:"<>|]', "", str(nombre)).strip()
+
+# ═══════════════ NORMALIZACIÓN DE MUNICIPIOS (FORMATO + ACENTOS) ═══════════════
+# 1) Todos los municipios quedan con el MISMO formato (Título, sin espacios
+#    dobles, sin mezclar mayúsculas/minúsculas).
+# 2) Si el municipio real lleva acento (aunque venga sin él en el archivo
+#    origen), se le integra el acento correcto usando un diccionario.
+#
+# Estrategia: se genera una "llave" del nombre sin acentos y en mayúsculas;
+# esa llave se busca en DICCIONARIO_MUNICIPIOS. Si existe, se usa el nombre
+# oficial ya acentuado. Si no existe, se aplica formato Título respetando los
+# conectores en español ("de", "del", "la", "las", "los", "y", "en", "el").
+#
+# El diccionario cubre las capitales estatales y los municipios/ciudades más
+# comunes de México. Si aparece un municipio con acento que no está en la
+# lista, solo agrega una línea nueva:
+#   "NOMBRE SIN ACENTO EN MAYUSCULAS": "Nombre Correcto Con Acento",
+
+def _quitar_acentos(texto):
+    """Texto SIN acentos/diacríticos y en MAYÚSCULAS, usado como llave de
+    búsqueda (así 'MERIDA', 'Mérida' y 'mérida' generan la misma llave)."""
+    nfkd = unicodedata.normalize('NFKD', str(texto))
+    sin_acentos = "".join(c for c in nfkd if not unicodedata.combining(c))
+    return re.sub(r'\s+', ' ', sin_acentos).strip().upper()
+
+_CONECTORES = {"de", "del", "la", "las", "los", "y", "en", "el"}
+
+def _formato_titulo(texto):
+    """Capitalización tipo Título respetando conectores en español
+    (ej. 'San Juan del Río', no 'San Juan Del Río')."""
+    palabras = str(texto).strip().lower().split()
+    resultado = []
+    for i, palabra in enumerate(palabras):
+        if palabra in _CONECTORES and i != 0:
+            resultado.append(palabra)
+        else:
+            resultado.append(palabra[:1].upper() + palabra[1:] if palabra else palabra)
+    return " ".join(resultado)
+
+# Llave (SIN acentos, MAYÚSCULAS) -> Nombre oficial correctamente acentuado
+DICCIONARIO_MUNICIPIOS = {
+    # Aguascalientes
+    "JESUS MARIA": "Jesús María",
+    # Baja California Sur
+    "MULEGE": "Mulegé", "COMONDU": "Comondú",
+    # Campeche
+    "CALKINI": "Calkiní", "CHAMPOTON": "Champotón", "HECELCHAKAN": "Hecelchakán",
+    "HOPELCHEN": "Hopelchén", "ESCARCEGA": "Escárcega",
+    # Chiapas
+    "TUXTLA GUTIERREZ": "Tuxtla Gutiérrez", "SAN CRISTOBAL DE LAS CASAS": "San Cristóbal de las Casas",
+    "COMITAN DE DOMINGUEZ": "Comitán de Domínguez", "ANGEL ALBINO CORZO": "Ángel Albino Corzo",
+    "BERRIOZABAL": "Berriozábal", "YAJALON": "Yajalón", "TONALA": "Tonalá",
+    "CHILON": "Chilón", "OCOZOCOAUTLA DE ESPINOSA": "Ocozocoautla de Espinosa",
+    "AMATAN": "Amatán", "ZINACANTAN": "Zinacantán", "TUMBALA": "Tumbalá",
+    "TECPATAN": "Tecpatán", "SITALA": "Sitalá", "RAYON": "Rayón",
+    "IXHUATAN": "Ixhuatán", "HUIXTAN": "Huixtán", "LARRAINZAR": "Larráinzar",
+    "PANTELHO": "Pantelhó", "OSTUACAN": "Ostuacán", "FRANCISCO LEON": "Francisco León",
+    "IXTACOMITAN": "Ixtacomitán",
+    # Chihuahua
+    "JIMENEZ": "Jiménez", "LOPEZ": "López", "GOMEZ FARIAS": "Gómez Farías",
+    "ASCENSION": "Ascensión",
+    # Coahuila
+    "MUZQUIZ": "Múzquiz",
+    # Colima
+    "COQUIMATLAN": "Coquimatlán", "TECOMAN": "Tecomán", "VILLA DE ALVAREZ": "Villa de Álvarez",
+    "CUAUHTEMOC": "Cuauhtémoc", "MINATITLAN": "Minatitlán",
+    # Durango
+    "CANATLAN": "Canatlán", "CUENCAME": "Cuencamé", "GOMEZ PALACIO": "Gómez Palacio",
+    "GUANACEVI": "Guanaceví", "PANUCO DE CORONADO": "Pánuco de Coronado",
+    "PEÑON BLANCO": "Peñón Blanco", "PENON BLANCO": "Peñón Blanco",
+    "SAN JUAN DEL RIO": "San Juan del Río", "INDE": "Indé",
+    # Guanajuato
+    "LEON": "León", "SAN FRANCISCO DEL RINCON": "San Francisco del Rincón",
+    "PENJAMO": "Pénjamo", "ACAMBARO": "Acámbaro", "JERECUARO": "Jerécuaro",
+    "PURISIMA DEL RINCON": "Purísima del Rincón", "SAN DIEGO DE LA UNION": "San Diego de la Unión",
+    "SAN JOSE ITURBIDE": "San José Iturbide", "SANTIAGO MARAVATIO": "Santiago Maravatío",
+    "TARIMORO": "Tarímoro", "VILLAGRAN": "Villagrán", "XICHU": "Xichú",
+    # Guerrero
+    "ATOYAC DE ALVAREZ": "Atoyac de Álvarez", "TAXCO DE ALARCON": "Taxco de Alarcón",
+    "COYUCA DE BENITEZ": "Coyuca de Benítez", "COYUCA DE CATALAN": "Coyuca de Catalán",
+    "CUTZAMALA DE PINZON": "Cutzamala de Pinzón", "ZAPOTITLAN TABLAS": "Zapotitlán Tablas",
+    "JOSE AZUETA": "José Azueta", "TECPAN DE GALEANA": "Tecpán de Galeana",
+    # Hidalgo
+    "ZACUALTIPAN DE ANGELES": "Zacualtipán de Ángeles", "SAN AGUSTIN METZQUITITLAN": "San Agustín Metzquititlán",
+    "NICOLAS FLORES": "Nicolás Flores", "JUAREZ HIDALGO": "Juárez Hidalgo",
+    "PROGRESO DE OBREGON": "Progreso de Obregón", "TEPEHUACAN DE GUERRERO": "Tepehuacán de Guerrero",
+    "JACALA DE LEDEZMA": "Jacala de Ledezma", "TULANCINGO DE BRAVO": "Tulancingo de Bravo",
+    # Jalisco
+    "UNION DE TULA": "Unión de Tula",
+    # Estado de México
+    "NEZAHUALCOYOTL": "Nezahualcóyotl", "CUAUTITLAN IZCALLI": "Cuautitlán Izcalli",
+    "ATIZAPAN DE ZARAGOZA": "Atizapán de Zaragoza", "COACALCO DE BERRIOZABAL": "Coacalco de Berriozábal",
+    "TEOTIHUACAN": "Teotihuacán", "VILLA DEL CARBON": "Villa del Carbón",
+    "ACAMBAY": "Acambay de Ruíz Castañeda",
+    # Michoacán
+    "PATZCUARO": "Pátzcuaro", "APATZINGAN": "Apatzingán", "ZITACUARO": "Zitácuaro",
+    "PARACUARO": "Parácuaro", "TACAMBARO": "Tacámbaro", "TANGANCICUARO": "Tangancícuaro",
+    "PERIBAN": "Peribán", "ZINAPECUARO": "Zinapécuaro", "TARIMBARO": "Tarímbaro",
+    "TUMBISCATIO": "Tumbiscatío",
+    # Morelos
+    "YECAPIXTLA": "Yecapixtla",
+    # Nayarit
+    "AHUACATLAN": "Ahuacatlán", "AMATLAN DE CANAS": "Amatlán de Cañas",
+    "IXTLAN DEL RIO": "Ixtlán del Río",
+    # Nuevo León
+    "SAN NICOLAS DE LOS GARZA": "San Nicolás de los Garza", "GARCIA": "García",
+    "JUAREZ": "Juárez", "CADEREYTA JIMENEZ": "Cadereyta Jiménez",
+    "DR. GONZALEZ": "Doctor González", "DOCTOR GONZALEZ": "Doctor González",
+    "GENERAL TERAN": "General Terán",
+    # Oaxaca
+    "OAXACA DE JUAREZ": "Oaxaca de Juárez", "SANTA CRUZ XOXOCOTLAN": "Santa Cruz Xoxocotlán",
+    "JUCHITAN DE ZARAGOZA": "Juchitán de Zaragoza", "HUAJUAPAN DE LEON": "Huajuapan de León",
+    "MIAHUATLAN DE PORFIRIO DIAZ": "Miahuatlán de Porfirio Díaz",
+    "MATIAS ROMERO AVENDAÑO": "Matías Romero Avendaño",
+    "ZIMATLAN DE ALVAREZ": "Zimatlán de Álvarez",
+    # Puebla
+    "TEHUACAN": "Tehuacán", "SAN MARTIN TEXMELUCAN": "San Martín Texmelucan",
+    "ZACATLAN": "Zacatlán", "TEZIUTLAN": "Teziutlán", "IZUCAR DE MATAMOROS": "Izúcar de Matamoros",
+    "SAN ANDRES CHOLULA": "San Andrés Cholula", "ACATLAN": "Acatlán de Osorio",
+    # Querétaro
+    "QUERETARO": "Querétaro", "EL MARQUES": "El Marqués",
+    "PEÑAMILLER": "Peñamiller", "PENAMILLER": "Peñamiller",
+    # Quintana Roo
+    "OTHON P. BLANCO": "Othón P. Blanco", "OTHON P BLANCO": "Othón P. Blanco",
+    "BENITO JUAREZ": "Benito Juárez", "JOSE MARIA MORELOS": "José María Morelos",
+    "LAZARO CARDENAS": "Lázaro Cárdenas",
+    # San Luis Potosí
+    "SAN LUIS POTOSI": "San Luis Potosí", "SOLEDAD DE GRACIANO SANCHEZ": "Soledad de Graciano Sánchez",
+    "EBANO": "Ébano",
+    # Sinaloa
+    "CULIACAN": "Culiacán", "MAZATLAN": "Mazatlán", "COSALA": "Cosalá",
+    # Sonora
+    "SAN LUIS RIO COLORADO": "San Luis Río Colorado",
+    # Tabasco
+    "CARDENAS": "Cárdenas", "TENOSIQUE": "Tenosique de Pino Suárez",
+    "JALPA DE MENDEZ": "Jalpa de Méndez",
+    # Tamaulipas
+    "RIO BRAVO": "Río Bravo",
+    # Veracruz
+    "CORDOBA": "Córdoba", "PAPANTLA": "Papantla de Olarte",
+    "MARTINEZ DE LA TORRE": "Martínez de la Torre", "SAN ANDRES TUXTLA": "San Andrés Tuxtla",
+    "PANUCO": "Pánuco", "COSAMALOAPAN DE CARPIO": "Cosamaloapan de Carpio",
+    "BOCA DEL RIO": "Boca del Río", "NARANJOS AMATLAN": "Naranjos Amatlán",
+    # Yucatán
+    "MERIDA": "Mérida", "TIZIMIN": "Tizimín", "UMAN": "Umán",
+    "TEKAX": "Tekax de Álvaro Obregón", "MANI": "Maní", "DZAN": "Dzán",
+    "HALACHO": "Halachó",
+    # Zacatecas
+    "JEREZ": "Jerez de García Salinas", "RIO GRANDE": "Río Grande",
+    "TLALTENANGO DE SANCHEZ ROMAN": "Tlaltenango de Sánchez Román",
+    "PANUCO ZAC": "Pánuco",
+    # Ciudad de México (alcaldías)
+    "ALVARO OBREGON": "Álvaro Obregón", "COYOACAN": "Coyoacán",
+    "MAGDALENA CONTRERAS": "La Magdalena Contreras", "TLAHUAC": "Tláhuac",
+    "CUAUHTEMOC CDMX": "Cuauhtémoc", "BENITO JUAREZ CDMX": "Benito Juárez",
+}
+
+_LLAVES_DICCIONARIO = list(DICCIONARIO_MUNICIPIOS.keys())
+
+# Qué tan parecido debe ser un texto a una llave del diccionario para
+# considerarlo "el mismo municipio pero mal escrito" (0.0 a 1.0).
+# 0.87 es un umbral seguro: corrige errores de tipeo/variantes reales
+# (ej. 'MERIDAA', 'MERID A', 'TUXTLA GUTIEREZ') sin confundir municipios
+# distintos entre sí (ej. 'Guadalajara' no se confunde con 'Guadalupe').
+_UMBRAL_SIMILITUD = 0.87
+
+def normalizar_municipio(mun, correcciones=None):
+    """
+    Recibe el nombre de un municipio en CUALQUIER formato (mayúsculas,
+    minúsculas, con o sin acentos, espacios de más, o incluso mal escrito) y
+    devuelve SIEMPRE el mismo resultado para el mismo municipio, para que al
+    agrupar/generar los CSVs por municipio, todas las variantes terminen en
+    el MISMO archivo. Hace tres cosas, en orden:
+
+      1) Si el municipio (sin acentos, en mayúsculas) coincide EXACTO con uno
+         del diccionario -> usa el nombre oficial ya acentuado.
+      2) Si NO coincide exacto pero es muy parecido a uno del diccionario
+         (por ejemplo, mal escrito, con una letra de más/menos, o con el
+         acento puesto en otro lado) -> lo identifica igualmente y lo corrige
+         al nombre oficial correcto.
+      3) Si no se parece a ningún municipio conocido -> se deja con formato
+         Título consistente (Mayúscula inicial en cada palabra, conectores en
+         minúscula), sin inventar acentos.
+
+    Si se pasa la lista `correcciones`, se le agrega una tupla
+    (texto_original, texto_corregido) cada vez que se aplica una corrección
+    por acento/escritura distinta, para poder reportarlo en el log.
+    """
+    if mun is None or isinstance(mun, float):
+        return "SIN_MUNICIPIO"
+    mun_limpio = re.sub(r'\s+', ' ', str(mun)).strip()
+    if not mun_limpio or mun_limpio.lower() == "nan":
+        return "SIN_MUNICIPIO"
+
+    llave = _quitar_acentos(mun_limpio)
+
+    # 1) Coincidencia exacta (ignorando mayúsculas/minúsculas y acentos)
+    if llave in DICCIONARIO_MUNICIPIOS:
+        nombre_correcto = DICCIONARIO_MUNICIPIOS[llave]
+        if correcciones is not None and nombre_correcto != mun_limpio:
+            correcciones.append((mun_limpio, nombre_correcto))
+        return nombre_correcto
+
+    # 2) Coincidencia por similitud: mismo municipio pero mal escrito/diferente
+    parecidos = difflib.get_close_matches(llave, _LLAVES_DICCIONARIO, n=1, cutoff=_UMBRAL_SIMILITUD)
+    if parecidos:
+        nombre_correcto = DICCIONARIO_MUNICIPIOS[parecidos[0]]
+        if correcciones is not None:
+            correcciones.append((mun_limpio, nombre_correcto))
+        return nombre_correcto
+
+    # 3) No es un municipio conocido: solo se le da formato Título consistente
+    return _formato_titulo(mun_limpio)
+# ════════════════════════════════════════════════════════════════════════
 
 # ══════════════════════ LÓGICA DE PROCESAMIENTO ══════════════════════
 
@@ -79,13 +294,31 @@ def procesar_separar_municipios(rutas_entrada, carpeta_salida, log):
     df = df.drop_duplicates(subset=['correoelec'], keep="first")
     log(f"  Duplicados eliminados: {antes - len(df)}")
 
-    municipios = df['municipio'].fillna("SIN_MUNICIPIO").str.strip().unique()
-    log(f"\nMunicipios encontrados: {len(municipios)}")
+    # ── Normalización de formato y acentos en 'municipio' ──
+    # Sin importar si venía en MAYÚSCULAS, minúsculas, con o sin acento, o
+    # incluso mal escrito, cada municipio se identifica y se deja con el
+    # MISMO nombre/formato, para que todas las variantes caigan en el
+    # MISMO archivo CSV.
+    municipios_originales = df['municipio'].fillna("SIN_MUNICIPIO").astype(str).str.strip().nunique()
+    correcciones_municipio = []
+    df['municipio'] = df['municipio'].apply(lambda x: normalizar_municipio(x, correcciones_municipio))
+    municipios = sorted(df['municipio'].unique())
+    log(f"\nMunicipios encontrados (originales, con variantes): {municipios_originales}")
+    log(f"Municipios tras normalizar formato/acentos/escritura: {len(municipios)}")
+
+    if correcciones_municipio:
+        vistos = set()
+        log("\nCorrecciones de acento/escritura detectadas y aplicadas:")
+        for original, corregido in correcciones_municipio:
+            clave = (original.upper(), corregido)
+            if clave not in vistos and original != corregido:
+                vistos.add(clave)
+                log(f"   '{original}'  →  '{corregido}'")
 
     os.makedirs(carpeta_salida, exist_ok=True)
 
-    for mun in sorted(municipios):
-        df_m = df[df['municipio'].fillna("SIN_MUNICIPIO").str.strip() == mun].copy()
+    for mun in municipios:
+        df_m = df[df['municipio'] == mun].copy()
         
         # Guardar estrictamente estas 4 columnas en este orden
         df_m = df_m[['correoelec', 'nom_estab', 'entidad', 'municipio']]
